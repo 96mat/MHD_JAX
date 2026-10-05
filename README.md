@@ -6,7 +6,7 @@ compared and validated against [DESC](https://desc-docs.readthedocs.io/en/stable
 Having a full continuous parametric solver means that once the neural network has been trained, it's possible to have, for a given parameter space $\mathcal{P}$, an almost *infinite* number 
 of solutions at an inference cost of a *few milliseconds*, enabling real-time fusion plasma control 
 
->> In DESC, each simulation corresponding to a new parameter configuration can require GPU time from several minutes to several hours of GPU time to complete.
+>> In DESC, each simulation corresponding to a new parameter configuration can require from several minutes to several hours of GPU time to complete.
 
 > The full code developed for this project will be made publicly available once it has been further refined.
 

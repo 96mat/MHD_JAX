@@ -13,5 +13,6 @@ This test case refers to the most advanced Helitron stellarator ever built, whic
 # W7-X Test Case: [link](https://96mat.github.io/MHD_JAX/W7-X/)
 [Wendelstein 7-X](https://www.sciencedirect.com/science/article/pii/S0920379621001575) just like the Matterhorn-S project takes it name form a famous mountain in Germany. This test case can be explored using the following [Link](https://96mat.github.io/MHD_JAX/W7-X/)
 
-
+# CTH Test Case: [link](https://96mat.github.io/MHD_JAX/CTH/)
+The [Compact Toroidal Hybrid](https://www.tandfonline.com/doi/full/10.1080/15361055.2017.1291046) device is a torsatron stellarator concept that combines aspects of classical stellarator and tokamak reactors. This example case can be visualized [here](https://96mat.github.io/MHD_JAX/CTH/)
 

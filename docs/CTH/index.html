@@ -1,0 +1,1599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torsatron PINN Explorer</title>
+<meta name="description" content="Real-time in-browser inference of a pressure-parametric MHD-equilibrium PINN: nested flux surfaces of a 5-period torsatron as a function of pressure amplitude, at fixed rotational transform.">
+<style>
+  :root {
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --ink: #1c1d21;
+    --muted: #666a73;
+    --line: #dedfe3;
+    --grid: #ececef;
+    --accent: #2f6fdb;
+    --warn: #b4531a;
+    --ok: #2c7a4b;
+    --boundary: #1c1d21;
+    --ghost: rgba(28, 29, 33, 0.28);
+    --panel-a: rgba(255, 255, 255, 0.85);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121317;
+      --panel: #1b1d23;
+      --ink: #e8e9ec;
+      --muted: #9a9ea8;
+      --line: #2e313a;
+      --grid: #262830;
+      --accent: #6ea0ff;
+      --warn: #f0a060;
+      --ok: #6fcf97;
+      --boundary: #e8e9ec;
+      --ghost: rgba(232, 233, 236, 0.28);
+      --panel-a: rgba(27, 29, 35, 0.85);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121317;
+    --panel: #1b1d23;
+    --ink: #e8e9ec;
+    --muted: #9a9ea8;
+    --line: #2e313a;
+    --grid: #262830;
+    --accent: #6ea0ff;
+    --warn: #f0a060;
+    --ok: #6fcf97;
+    --boundary: #e8e9ec;
+    --ghost: rgba(232, 233, 236, 0.28);
+    --panel-a: rgba(27, 29, 35, 0.85);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 18px 24px 6px;
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
+  }
+  header h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); }
+  main {
+    display: grid;
+    grid-template-columns: var(--side, 400px) 10px minmax(240px, var(--pfr, 1fr)) 10px minmax(240px, var(--tfr, 1fr));
+    gap: 3px;
+    padding: 12px 24px 24px;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .controls { display: flex; flex-direction: column; gap: 18px; font-size: 16.8px; }   /* body 14px x1.2 */
+  .ctl label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-weight: 600; }
+  .ctl .val { white-space: nowrap; font-variant-numeric: tabular-nums; font-weight: 650; color: var(--accent); font-size: 19.2px; }
+  .hint { color: var(--muted); font-size: 15px; margin-top: 2px; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); margin: 8px 0 0; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .row label { font-weight: 500; display: inline-flex; gap: 6px; align-items: center; }
+  .stats { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+  .stats dt { color: var(--muted); }
+  .stats dd { margin: 0; text-align: right; white-space: nowrap; }
+  .badge { white-space: nowrap; font-size: 14.4px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; display: inline-block; }
+  .badge.ok { color: var(--ok); }
+  .badge.warn { color: var(--warn); }
+  main { align-items: start; }
+  .plotwrap {
+    position: sticky; top: 12px;
+    height: calc(100vh - 90px); min-height: 420px; padding: 0; overflow: hidden;
+  }
+  #poincare, #c3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #c3d { cursor: grab; touch-action: none; }
+  #c3d:active { cursor: grabbing; }
+  .v3title {
+    position: absolute; left: 10px; top: 8px; max-width: calc(100% - 20px); pointer-events: none;
+    font-size: 15px; color: var(--ink);
+    background: var(--panel-a); border-radius: 6px; padding: 3px 7px;
+  }
+  .v3title .hint { font-size: 13.8px; }
+  .v3bar {
+    position: absolute; right: 12px; bottom: 12px; display: flex; flex-wrap: wrap; gap: 6px 10px;
+    align-items: center; justify-content: flex-end;
+    background: var(--panel-a); border-radius: 8px; padding: 4px 6px; font-size: 15px;
+  }
+  .v3bar label { display: inline-flex; gap: 4px; align-items: center; }
+  .v3bar button { padding: 2px 9px; }
+  #msg3d { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 24px; text-align: center; pointer-events: none; }
+  canvas.zoomable { cursor: grab; touch-action: none; }
+  canvas.zoomable:active { cursor: grabbing; }
+  .readout {
+    position: absolute; right: 14px; top: 10px;
+    color: var(--muted); font-size: 14.4px; font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  .zoombar {
+    position: absolute; right: 22px; bottom: 60px;
+    display: flex; gap: 6px; align-items: center;
+    background: var(--panel-a); border-radius: 8px; padding: 4px;
+  }
+  .zoombar button { padding: 2px 9px; min-width: 30px; }
+  .zoombar .zl { color: var(--muted); font-size: 14.4px; font-variant-numeric: tabular-nums; padding: 0 4px; }
+  /* colorbar: its own box, resizable from the corner and draggable */
+  #cbar {
+    position: absolute; left: calc(100% - 100px); top: 40px; width: 84px; height: 200px;
+    min-width: 62px; min-height: 96px; max-width: 60%; max-height: 85%;
+    resize: both; overflow: hidden; cursor: move; touch-action: none;
+    background: var(--panel-a); border: 1px dashed transparent; border-radius: 6px;
+  }
+  #cbar:hover { border-color: var(--line); }
+  #cbar canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .betatile { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .brow { display: flex; justify-content: space-between; align-items: baseline; }
+  .blbl { font-weight: 600; }
+  .bval { font-size: 26.4px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bdelta { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .bdelta.up { color: var(--warn); }
+  .bdelta.down { color: var(--accent); }
+  #betaplot { width: 100%; height: 84px; display: block; margin-top: 4px; }
+  /* profiles: resizable in the sidebar, or enlarged as a floating panel */
+  .profhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .profhead h2 { margin: 0; }
+  .profhead button { padding: 2px 8px; font-size: 15px; }
+  .profiles {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    aspect-ratio: 2.1 / 1; min-height: 110px; resize: vertical; overflow: hidden;
+  }
+  .pcell { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pcell canvas { flex: 1; width: 100%; min-height: 0; display: block; }
+  .profiles .t { font-size: 14.4px; color: var(--muted); margin-bottom: 2px; }
+  .profwrap.big {
+    position: fixed; z-index: 50; top: 7vh; left: 6vw; width: 88vw; height: 76vh;
+    min-width: 320px; min-height: 260px; max-width: 98vw; max-height: 94vh;
+    resize: both; overflow: hidden;
+    display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+  }
+  .profwrap.big .profiles {
+    flex: 1; height: auto; aspect-ratio: auto; resize: none;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  }
+  .profwrap.big .profiles .t { font-size: 16.8px; }
+  #backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .35); display: none; }
+  #backdrop.on { display: block; }
+  select {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px;
+  }
+  button, .filebtn {
+    font: inherit; color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer;
+  }
+  button:hover, .filebtn:hover { border-color: var(--accent); }
+  .filebtn input { display: none; }
+  .foot { color: var(--muted); font-size: 14.4px; }
+  h2 { font-size: 15.6px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+  /* splitter: drag to resize the controls column (col-resize cursor, as in VS Code) */
+  .gutter {
+    position: sticky; top: 12px; align-self: start; height: calc(100vh - 90px); min-height: 420px;
+    cursor: col-resize; touch-action: none; display: flex; justify-content: center;
+  }
+  .gutter::before {
+    content: ""; width: 2px; height: 100%; border-radius: 2px; background: transparent;
+    transition: background .12s;
+  }
+  .gutter:hover::before, .gutter.drag::before { background: var(--accent); }
+  body.resizing { cursor: col-resize; user-select: none; }
+  @media (max-width: 820px) {
+    header { padding: 14px 16px 4px; }
+    main { grid-template-columns: minmax(0, 1fr); padding: 10px 16px 16px; gap: 16px; }
+    .gutter { display: none; }
+    .plotwrap { position: relative; top: 0; height: auto; min-height: 0; aspect-ratio: 1 / 1; order: -1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Torsatron PINN Explorer</h1>
+  <span class="sub">Real-time inference of the pressure-parametric equilibrium network — nested flux surfaces at fixed toroidal angle</span>
+</header>
+
+<main>
+  <section class="panel controls" aria-label="Controls">
+    <div class="ctl">
+      <label for="mu0">Pressure amplitude μ₀ <span class="val" id="mu0v"></span></label>
+      <input type="range" id="mu0" min="0" max="5" step="0.01" value="1">
+      <div class="row" style="margin-top:6px">
+        <button type="button" id="play" aria-pressed="false">▶ Play 0 → μ₀,max</button>
+      </div>
+      <div class="hint">p(ρ) = μ₀ · 340 kPa · (1 − ρ²)²</div>
+      <div class="hint">Surfaces: X(μ₀) = X<sub>init</sub> + (μ₀/μ₀,max)·[X<sub>NN</sub>(μ₀) − X<sub>init</sub>] — μ₀ = 0 is the initial guess, μ₀ = μ₀,max is the PINN equilibrium</div>
+    </div>
+    <div class="betatile">
+      <div class="brow">
+        <span class="blbl">⟨β⟩<sub>vol</sub></span>
+        <span class="bval" id="betaV">–</span>
+      </div>
+      <div class="bdelta" id="betaD">&nbsp;</div>
+      <canvas id="betaplot" aria-label="β as a function of μ₀"></canvas>
+      <div class="hint" id="betaHint">β = ⟨p⟩ / ⟨B²/2μ₀⟩, volume-weighted with √g, as Postprocess_Beta.compute_beta</div>
+    </div>
+    <div class="ctl">
+      <label>Rotational transform ι <span class="val" id="mu1v"></span></label>
+      <div class="hint">ι(ρ) = μ₁ · (0.35 + 0.65 ρ²), held at μ₁ = 1. Only the pressure was varied in training, so ι has no control here.</div>
+    </div>
+
+    <div class="profwrap" id="profwrap">
+      <div class="profhead">
+        <h2>Profiles</h2>
+        <button type="button" id="profBig" aria-expanded="false">⤢ Enlarge</button>
+      </div>
+      <div class="profiles" id="profiles">
+        <div class="pcell"><div class="t">p(ρ) [kPa]</div><canvas id="pplot" class="zoomable"></canvas></div>
+        <div class="pcell"><div class="t">ι(ρ) (fixed)</div><canvas id="iplot" class="zoomable"></canvas></div>
+      </div>
+      <div class="hint">drag the lower corner to resize · wheel = zoom · drag = pan · double-click = reset</div>
+    </div>
+
+    <div class="ctl">
+      <label for="zeta">Toroidal angle ζ <span class="val" id="zetav"></span></label>
+      <input type="range" id="zeta" min="0" max="1" step="0.005" value="0">
+      <div class="hint">fraction of one field period 2π/NFP</div>
+      <div class="row" style="margin-top:6px">
+        <button type="button" data-zeta="0">ζ = 0</button>
+        <button type="button" data-zeta="0.25">¼ period</button>
+        <button type="button" data-zeta="0.5">½ period · ζ = π/5</button>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <label for="nsurf">Surfaces <span class="val" id="nsurfv"></span></label>
+      <input type="range" id="nsurf" min="3" max="30" step="1" value="10">
+    </div>
+
+    <div class="row">
+      <label for="palette">Palette
+        <select id="palette">
+          <option>viridis</option><option>plasma</option><option>inferno</option>
+          <option>magma</option><option>cividis</option><option>turbo</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="palrev"> reverse</label>
+    </div>
+    <div class="row">
+      <label title="Initial guess of the training at the same ρ (Thun eq. 37): X_0n = ρ² X_b + (1−ρ²) X_axis, X_mn = ρ^m X_b for m ≥ 1"><input type="checkbox" id="ghost" checked> initial guess (dashed)</label>
+      <label><input type="checkbox" id="extrap"> allow extrapolation</label>
+    </div>
+
+    <div>
+      <h2>Diagnostics</h2>
+      <dl class="stats">
+        <dt>Magnetic axis R</dt><dd id="sAxisR">–</dd>
+        <dt>Axis shift vs μ₀ = 1</dt><dd id="sShift">–</dd>
+        <dt>Axis NN − initial (VMEC axis)</dt><dd id="sShiftAn">–</dd>
+        <dt>Axis Z</dt><dd id="sAxisZ">–</dd>
+        <dt>Inference time</dt><dd id="sTime">–</dd>
+        <dt>3D update time</dt><dd id="s3dT">–</dd>
+        <dt>⟨β⟩ time (24³ grid)</dt><dd id="sBetaT">–</dd>
+        <dt>Training box</dt><dd id="sDomain">–</dd>
+        <dt>JS vs JAX check</dt><dd id="sCheck">–</dd>
+        <dt>⟨β⟩ JS vs scimba</dt><dd id="sBetaCheck">–</dd>
+      </dl>
+    </div>
+
+    <div>
+      <h2>Panels</h2>
+      <div class="row">
+        <button type="button" id="rsCtl" title="Controls width, profiles size and zoom">Controls</button>
+        <button type="button" id="rsPoin" title="Zoom, colorbar and width">Poincaré</button>
+        <button type="button" id="rs3d" title="Camera and width">3D</button>
+        <button type="button" id="rsAll">Reset all</button>
+      </div>
+    </div>
+
+    <div class="row">
+      <button id="reset">Reset μ₀</button>
+      <label class="filebtn">Load weights (.json)<input type="file" id="file" accept=".json,application/json"></label>
+    </div>
+    <div class="foot" id="modelinfo"></div>
+  </section>
+
+  <div class="gutter" id="gutter" role="separator" aria-orientation="vertical" aria-label="Resize controls panel" title="Drag to resize · double-click to reset"></div>
+
+  <section class="panel plotwrap" aria-label="Poincaré section">
+    <canvas id="poincare" class="zoomable"></canvas>
+    <div class="readout" id="readout"></div>
+    <div id="cbar" title="Drag to move · corner to resize · double-click to reset"><canvas id="cbarcv"></canvas></div>
+    <div class="zoombar" title="wheel = zoom at cursor · drag = pan · double-click = fit">
+      <span class="zl" id="zoomv">×1.0</span>
+      <button type="button" id="zin" aria-label="Zoom in">+</button>
+      <button type="button" id="zout" aria-label="Zoom out">−</button>
+      <button type="button" id="zfit">Fit</button>
+    </div>
+  </section>
+
+  <div class="gutter" id="gutter2" role="separator" aria-orientation="vertical" aria-label="Resize Poincaré and 3D panels" title="Drag to resize · double-click to reset"></div>
+
+  <section class="panel plotwrap" id="view3d" aria-label="3D flux surfaces">
+    <canvas id="c3d"></canvas>
+    <div id="msg3d"></div>
+    <div class="v3title">
+      <div id="v3t">3D flux surfaces</div>
+      <div class="hint">drag = rotate · shift / right-drag = pan · wheel = zoom · double-click = reset view</div>
+    </div>
+    <div class="v3bar">
+      <label title="Close-up that stays on the cut: the section keeps facing you while ζ moves"><input type="checkbox" id="v3follow"> follow ζ</label>
+      <label title="Whole boundary as a transparent torus"><input type="checkbox" id="v3ghost" checked> ghost torus</label>
+      <label title="Palette of the 3D surfaces (independent of the Poincaré panel)">palette <select id="v3pal"><option>viridis</option><option>plasma</option><option>inferno</option><option>magma</option><option>cividis</option><option>turbo</option></select></label>
+      <label title="Number of nested surfaces drawn in 3D">surfaces <select id="v3n"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option></select></label>
+      <button type="button" id="v3reset">Reset view</button>
+    </div>
+  </section>
+</main>
+<div id="backdrop"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="model.js"></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------------
+// Model: MLP (tanh hidden, linear out) on input [2ρ²−1, μ₀, μ₁] -> 3K coeffs
+// (μ₁ = iota amplitude is still a network input but was fixed at 1 in training)
+// laid out [R(K), λ(K), Z(K)];  X_mn(ρ) = ρ^m [ X_b + (1−ρ²) c_X ]
+// R = Σ R_mn cos(mθ − n NFP ζ),  Z = Σ Z_mn sin(mθ − n NFP ζ)
+// ---------------------------------------------------------------------------
+let MODEL = null;       // parsed model
+let NET = null;         // flattened weights
+let K = 0, M_ARR = null, N_ARR = null, RB = null, ZB = null, RA = null, ZA = null;
+
+function prepareModel(model) {
+  const layers = model.layers.map(l => {
+    const out = l.W.length, inp = l.W[0].length;
+    const W = new Float64Array(out * inp);
+    for (let i = 0; i < out; i++) for (let j = 0; j < inp; j++) W[i * inp + j] = l.W[i][j];
+    return { W, b: Float64Array.from(l.b), out, inp };
+  });
+  K = model.modes.length;
+  if (layers[layers.length - 1].out !== 3 * K) throw new Error("last layer size != 3·K");
+  M_ARR = Float64Array.from(model.modes.map(mn => mn[0]));
+  N_ARR = Float64Array.from(model.modes.map(mn => mn[1]));
+  RB = Float64Array.from(model.Rb);
+  ZB = Float64Array.from(model.Zb);
+  MMAX = Math.max(...model.modes.map(mn => mn[0]));
+  RA = model.Ra ? Float64Array.from(model.Ra) : null;   // VMEC axis, for the initial guess
+  ZA = model.Za ? Float64Array.from(model.Za) : null;
+  MODEL = model;
+  NET = layers;
+  trigCache.key = null;
+}
+
+function forward(x) {
+  let h = x;
+  for (let li = 0; li < NET.length; li++) {
+    const { W, b, out, inp } = NET[li];
+    const y = new Float64Array(out);
+    for (let i = 0; i < out; i++) {
+      let s = b[i];
+      const row = i * inp;
+      for (let j = 0; j < inp; j++) s += W[row + j] * h[j];
+      y[i] = li < NET.length - 1 ? Math.tanh(s) : s;
+    }
+    h = y;
+  }
+  return h;
+}
+
+// Blend weight of the network w.r.t. the initial guess: 0 at μ₀ = 0, 1 at the top of the training box
+function blendT(mu0) {
+  const hi = MODEL.domain_mu ? MODEL.domain_mu[0][1] : TRAIN_RANGE.mu0[1];
+  return Math.min(1, Math.max(0, mu0 / hi));
+}
+// network input μ₀, clamped to the training box (below it the blend toward the initial guess takes over)
+function netMu0(mu0) {
+  if ($("extrap").checked) return mu0;
+  const lo = MODEL.domain_mu ? MODEL.domain_mu[0][0] : TRAIN_RANGE.mu0[0];
+  return Math.max(lo, mu0);
+}
+
+// Radial Fourier amplitudes R_mn(ρ), Z_mn(ρ) shown for a given μ:
+//   X(μ₀) = X_init + t(μ₀)·[X_NN(μ₀) − X_init],  t = μ₀/μ₀,max
+// raw = true -> pure network output (self-check against JAX)
+function amplitudes(rho, mu, raw = false) {
+  const [Rn, Zn] = rawAmplitudes(rho, raw ? mu : [netMu0(mu[0]), mu[1]]);
+  if (raw) return [Rn, Zn];
+  const t = blendT(mu[0]);
+  if (t === 1) return [Rn, Zn];
+  const [Ri, Zi] = analyticAmplitudes(rho);
+  for (let k = 0; k < K; k++) {
+    Rn[k] = Ri[k] + t * (Rn[k] - Ri[k]);
+    Zn[k] = Zi[k] + t * (Zn[k] - Zi[k]);
+  }
+  return [Rn, Zn];
+}
+
+function rawAmplitudes(rho, mu) {
+  const out = forward([2 * rho * rho - 1, mu[0], mu[1]]);
+  const Rm = new Float64Array(K), Zm = new Float64Array(K);
+  const dist = 1 - rho * rho;
+  for (let k = 0; k < K; k++) {
+    const rm = Math.pow(rho, M_ARR[k]);   // 0**0 = 1 in JS, as in JAX
+    Rm[k] = rm * (RB[k] + dist * out[k]);
+    Zm[k] = rm * (ZB[k] + dist * out[2 * K + k]);
+  }
+  return [Rm, Zm];
+}
+
+// cos/sin tables of the phase for all (θ, mode) at fixed ζ — reused across frames
+const trigCache = { key: null, cos: null, sin: null, nth: 0 };
+function trig(zeta, nth) {
+  const key = zeta + "|" + nth;
+  if (trigCache.key === key) return trigCache;
+  const c = new Float64Array(nth * K), s = new Float64Array(nth * K);
+  const nfp = MODEL.nfp;
+  for (let t = 0; t < nth; t++) {
+    const th = (2 * Math.PI * t) / (nth - 1);
+    for (let k = 0; k < K; k++) {
+      const ph = M_ARR[k] * th - N_ARR[k] * nfp * zeta;
+      c[t * K + k] = Math.cos(ph);
+      s[t * K + k] = Math.sin(ph);
+    }
+  }
+  Object.assign(trigCache, { key, cos: c, sin: s, nth });
+  return trigCache;
+}
+
+// Initial guess of the training (initialize_axis_bias, Thun eq. 37): weights ~ 0, and the
+// last-layer bias makes c_X = X_a − X_b for m = 0 and 0 for m ≥ 1, so
+//   X_0n(ρ) = ρ² X_b + (1 − ρ²) X_a,   X_mn(ρ) = ρ^m X_b  (m ≥ 1).
+// Without the axis term (cR = cZ = 0, Learning_Check.reconstruct_RZ_analytic_only) every
+// surface keeps the boundary's m = 0 part and near the ζ = 0 section they cross the boundary.
+function analyticAmplitudes(rho) {
+  const Rm = new Float64Array(K), Zm = new Float64Array(K);
+  const dist = 1 - rho * rho;
+  for (let k = 0; k < K; k++) {
+    const rm = Math.pow(rho, M_ARR[k]);
+    const cR = RA && M_ARR[k] === 0 ? RA[k] - RB[k] : 0;
+    const cZ = ZA && M_ARR[k] === 0 ? ZA[k] - ZB[k] : 0;
+    Rm[k] = rm * (RB[k] + dist * cR);
+    Zm[k] = rm * (ZB[k] + dist * cZ);
+  }
+  return [Rm, Zm];
+}
+
+// mu = null -> initial-guess reference instead of the network
+function surface(rho, mu, zeta, nth) {
+  const [Rm, Zm] = mu ? amplitudes(rho, mu) : analyticAmplitudes(rho);
+  const T = trig(zeta, nth);
+  const R = new Float64Array(nth), Z = new Float64Array(nth);
+  for (let t = 0; t < nth; t++) {
+    let r = 0, z = 0;
+    const o = t * K;
+    for (let k = 0; k < K; k++) { r += Rm[k] * T.cos[o + k]; z += Zm[k] * T.sin[o + k]; }
+    R[t] = r; Z[t] = z;
+  }
+  return { R, Z };
+}
+
+function pointRZ(rho, theta, zeta, mu, raw = false) {
+  const [Rm, Zm] = mu ? amplitudes(rho, mu, raw) : analyticAmplitudes(rho);
+  let r = 0, z = 0;
+  for (let k = 0; k < K; k++) {
+    const ph = M_ARR[k] * theta - N_ARR[k] * MODEL.nfp * zeta;
+    r += Rm[k] * Math.cos(ph); z += Zm[k] * Math.sin(ph);
+  }
+  return [r, z];
+}
+
+// ---------------------------------------------------------------------------
+// Volume-averaged beta, as Postprocess_Beta.compute_beta:
+//   β = <p>_vol / <B²/(2 μ0)>_vol,   <f>_vol = Σ √g f / Σ √g
+// on the tensor grid ρ ∈ linspace(0.05, 0.999, n), θ ∈ [0, 2π), ζ ∈ [0, 2π/NFP) (endpoint excluded).
+// |B|, √g exactly as StationaryMHDForceBalance.make_Bnorm_field / make_detg_field:
+//   B^θ = ψ'(ι − λ_ζ)/√g,  B^ζ = ψ'(1 + λ_θ)/√g,  ψ' = 2ρ/(2π),  |B|² = B^θ B_θ + B^ζ B_ζ
+// ---------------------------------------------------------------------------
+const MU0_SI = 1.25663706212e-6;
+const P0 = 3.4e5;                                   // Pa, p = μ₀ P0 (1 − ρ²)²
+const iotaOf = (rho, mu) => mu[1] * (0.35 + 0.65 * rho * rho);
+
+// MLP output and its derivative w.r.t. the first input (forward mode)
+function forwardD(x) {
+  let h = Float64Array.from(x), dh = new Float64Array(x.length);
+  dh[0] = 1;
+  for (let li = 0; li < NET.length; li++) {
+    const { W, b, out, inp } = NET[li];
+    const y = new Float64Array(out), dy = new Float64Array(out);
+    for (let i = 0; i < out; i++) {
+      let s = b[i], ds = 0;
+      const row = i * inp;
+      for (let j = 0; j < inp; j++) { s += W[row + j] * h[j]; ds += W[row + j] * dh[j]; }
+      if (li < NET.length - 1) { const t = Math.tanh(s); y[i] = t; dy[i] = ds * (1 - t * t); }
+      else { y[i] = s; dy[i] = ds; }
+    }
+    h = y; dh = dy;
+  }
+  return [h, dh];
+}
+
+const betaGrid = { key: null };
+function betaTables(nt, nz) {
+  const key = `${nt}|${nz}|${K}|${MODEL.nfp}`;
+  if (betaGrid.key === key) return betaGrid;
+  const np = nt * nz, c = new Float64Array(np * K), s = new Float64Array(np * K);
+  for (let a = 0; a < nt; a++) for (let q = 0; q < nz; q++) {
+    const th = 2 * Math.PI * a / nt, ze = 2 * Math.PI / MODEL.nfp * q / nz, o = (a * nz + q) * K;
+    for (let k = 0; k < K; k++) {
+      const ph = M_ARR[k] * th - N_ARR[k] * MODEL.nfp * ze;
+      c[o + k] = Math.cos(ph); s[o + k] = Math.sin(ph);
+    }
+  }
+  return Object.assign(betaGrid, { key, c, s, np });
+}
+
+function betaVol(mu, n = 24, rhoMin = 0.05, rhoMax = 0.999) {
+  const { c, s, np } = betaTables(n, n);
+  const nfp = MODEL.nfp;
+  const Rk = new Float64Array(K), dRk = new Float64Array(K), Zk = new Float64Array(K), dZk = new Float64Array(K);
+  const mR = new Float64Array(K), nR = new Float64Array(K), mZ = new Float64Array(K), nZ = new Float64Array(K);
+  const mL = new Float64Array(K), nL = new Float64Array(K);
+  let Wsum = 0, pSum = 0, B2Sum = 0;
+  for (let i = 0; i < n; i++) {
+    const rho = n > 1 ? rhoMin + (rhoMax - rhoMin) * i / (n - 1) : rhoMin;
+    const [o, dof] = forwardD([2 * rho * rho - 1, netMu0(mu[0]), mu[1]]);
+    const dfdr = 4 * rho, dist = 1 - rho * rho, ddist = -2 * rho;
+    for (let k = 0; k < K; k++) {
+      const m = M_ARR[k], rm = Math.pow(rho, m), drm = m === 0 ? 0 : m * Math.pow(rho, m - 1);
+      const cR = o[k], cL = o[K + k], cZ = o[2 * K + k];
+      const dcR = dof[k] * dfdr, dcZ = dof[2 * K + k] * dfdr;
+      const Rin = RB[k] + dist * cR, Zin = ZB[k] + dist * cZ;
+      Rk[k] = rm * Rin; dRk[k] = drm * Rin + rm * (ddist * cR + dist * dcR);
+      Zk[k] = rm * Zin; dZk[k] = drm * Zin + rm * (ddist * cZ + dist * dcZ);
+      const Lk = rm * cL, nn = N_ARR[k] * nfp;
+      mR[k] = -m * Rk[k]; nR[k] = nn * Rk[k];          // ∂θ, ∂ζ of cos series
+      mZ[k] = m * Zk[k]; nZ[k] = -nn * Zk[k];          // ∂θ, ∂ζ of sin series
+      mL[k] = m * Lk; nL[k] = -nn * Lk;
+    }
+    const psip = 2 * rho / (2 * Math.PI), iota = iotaOf(rho, mu);
+    const p = mu[0] * P0 * dist * dist;
+    for (let g = 0; g < np; g++) {
+      const off = g * K;
+      let R = 0, Rr = 0, Rt = 0, Rz = 0, Zr = 0, Zt = 0, Zz = 0, Lt = 0, Lz = 0;
+      for (let k = 0; k < K; k++) {
+        const cc = c[off + k], ss = s[off + k];
+        R += Rk[k] * cc; Rr += dRk[k] * cc; Rt += mR[k] * ss; Rz += nR[k] * ss;
+        Zr += dZk[k] * ss; Zt += mZ[k] * cc; Zz += nZ[k] * cc;
+        Lt += mL[k] * cc; Lz += nL[k] * cc;
+      }
+      const gtt = Rt * Rt + Zt * Zt, gtz = Rt * Rz + Zt * Zz, gzz = Rz * Rz + Zz * Zz + R * R;
+      const grr = Rr * Rr + Zr * Zr, grt = Rr * Rt + Zr * Zt, grz = Rr * Rz + Zr * Zz;
+      const detg = grr * (gtt * gzz - gtz * gtz) - grt * (grt * gzz - gtz * grz) + grz * (grt * gtz - gtt * grz);
+      const w = Math.sqrt(Math.abs(detg));
+      const Bt = psip * (iota - Lz) / w, Bz = psip * (1 + Lt) / w;
+      const B2 = Math.abs(Bt * (gtt * Bt + gtz * Bz) + Bz * (gtz * Bt + gzz * Bz));
+      Wsum += w; pSum += w * p; B2Sum += w * B2;
+    }
+  }
+  const pAvg = pSum / (Wsum + 1e-30), B2Avg = B2Sum / (Wsum + 1e-30);
+  return { pAvg, B2Avg, beta1: pAvg / (B2Avg / 2), betaSI: pAvg / (B2Avg / (2 * MU0_SI)) };
+}
+
+function axisRZ(mu, zeta) {
+  // at ρ = 0 only m = 0 modes survive: R = Σ R_0n cos(n NFP ζ), Z = −Σ Z_0n sin(n NFP ζ)
+  return pointRZ(0, 0, zeta, mu);
+}
+
+function selfCheck() {
+  const refs = MODEL.reference || [];
+  let err = 0;
+  for (const r of refs) {
+    const [R, Z] = pointRZ(r.rho, r.theta, r.zeta, r.mu, true);
+    err = Math.max(err, Math.abs(R - r.R), Math.abs(Z - r.Z));
+  }
+  const el = document.getElementById("sCheck");
+  if (!refs.length) { el.innerHTML = '<span class="badge warn">no reference</span>'; return; }
+  const ok = err < 1e-9;
+  el.innerHTML = `<span class="badge ${ok ? "ok" : "warn"}">max |Δ| ${err.toExponential(1)}</span>`;
+
+  // ⟨β⟩ against Postprocess_Beta.compute_beta on the same grid (relative error)
+  const bref = MODEL.reference_beta || [], eb = $("sBetaCheck");
+  if (!bref.length) { eb.innerHTML = '<span class="badge warn">no reference</span>'; return; }
+  let rel = 0;
+  for (const r of bref) rel = Math.max(rel, Math.abs(betaVol(r.mu, r.n).betaSI / r.beta_SI - 1));
+  eb.innerHTML = `<span class="badge ${rel < 1e-6 ? "ok" : "warn"}">max rel ${rel.toExponential(1)}</span>`;
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+const $ = id => document.getElementById(id);
+const cv = $("poincare");
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// perceptual sequential colormap (viridis stops), ρ = 0 dark → ρ = 1 bright
+const PALETTES = {
+  viridis: [[68,1,84],[72,40,120],[62,74,137],[49,104,142],[38,130,142],[31,158,137],[53,183,121],[109,205,89],[180,222,44],[253,231,37]],
+  plasma:  [[13,8,135],[75,3,161],[125,3,168],[168,34,150],[203,70,121],[229,107,93],[248,148,65],[253,195,40],[240,249,33]],
+  inferno: [[0,0,4],[31,12,72],[85,15,109],[136,34,106],[186,54,85],[227,89,51],[249,140,10],[249,201,50],[252,255,164]],
+  magma:   [[0,0,4],[28,16,68],[79,18,123],[129,37,129],[181,54,122],[229,80,100],[251,135,97],[254,194,135],[252,253,191]],
+  cividis: [[0,34,78],[18,53,112],[59,73,108],[87,93,109],[112,113,115],[138,134,120],[165,156,116],[195,179,105],[225,204,85],[254,232,56]],
+  turbo:   [[48,18,59],[70,107,227],[40,187,236],[49,242,153],[162,252,60],[237,208,58],[251,128,34],[210,49,5],[122,4,3]],
+};
+let PAL = PALETTES.viridis, PAL_REV = false;
+// sequential colormap for ρ (surfaces and colorbar)
+function cmapWith(pal, rev, t) {
+  t = Math.min(1, Math.max(0, t));
+  if (rev) t = 1 - t;
+  t *= pal.length - 1;
+  const i = Math.min(pal.length - 2, Math.floor(t)), f = t - i;
+  const a = pal[i], b = pal[i + 1];
+  return `rgb(${a.map((v, j) => Math.round(v + f * (b[j] - v))).join(",")})`;
+}
+const cmap = t => cmapWith(PAL, PAL_REV, t);
+
+function fitCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const r = c.getBoundingClientRect();
+  const w = Math.max(1, Math.round(r.width * dpr)), h = Math.max(1, Math.round(r.height * dpr));
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const ctx = c.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, W: r.width, H: r.height };
+}
+
+// ---------------------------------------------------------------------------
+// Zoom / pan: wheel = zoom at cursor, drag = pan, pinch on touch, double-click = reset.
+// A plot draws `z.box` (world box, null = auto-fit) and stores what it actually
+// drew in `z.map` = { box, invX, invY } so the controller can map pixels back.
+// ---------------------------------------------------------------------------
+function zoomable(canvas) {
+  const z = { box: null, map: null };
+  // pointer position in the pixel frame of the last draw (the canvas may have been
+  // resized since, e.g. right after enlarging the profiles panel)
+  const pos = e => {
+    const r = canvas.getBoundingClientRect(), m = z.map;
+    const sx = m && m.W ? m.W / r.width : 1, sy = m && m.H ? m.H / r.height : 1;
+    return [(e.clientX - r.left) * sx, (e.clientY - r.top) * sy];
+  };
+  // Several events can arrive before the next frame redraws: update z.map in place
+  // (compose the transform) so each one builds on the previous instead of the stale draw.
+  const setBox = (b, invX, invY) => { z.box = b; z.map = Object.assign(z.map, { box: b, invX, invY }); schedule(); };
+  z.zoomAt = (px, py, f) => {
+    if (!z.map) return;
+    const { box: b, invX, invY } = z.map, wx = invX(px), wy = invY(py);
+    setBox({ x0: wx + (b.x0 - wx) * f, x1: wx + (b.x1 - wx) * f, y0: wy + (b.y0 - wy) * f, y1: wy + (b.y1 - wy) * f },
+      q => wx + (invX(q) - wx) * f, q => wy + (invY(q) - wy) * f);
+  };
+  z.zoomCenter = f => {
+    if (!z.map) return;
+    const r = canvas.getBoundingClientRect();
+    z.zoomAt(z.map.px ?? r.width / 2, z.map.py ?? r.height / 2, f);
+  };
+  z.reset = () => { z.box = null; schedule(); };
+
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const [x, y] = pos(e);
+    z.zoomAt(x, y, Math.exp(Math.max(-0.5, Math.min(0.5, d * 0.0015))));
+  }, { passive: false });
+
+  const ptrs = new Map();
+  canvas.addEventListener("pointerdown", e => { canvas.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, pos(e)); });
+  canvas.addEventListener("pointermove", e => {
+    if (!ptrs.has(e.pointerId) || !z.map) return;
+    const prev = ptrs.get(e.pointerId), cur = pos(e);
+    if (ptrs.size === 1) {
+      const { box: b, invX, invY } = z.map;
+      const dx = invX(prev[0]) - invX(cur[0]), dy = invY(prev[1]) - invY(cur[1]);
+      setBox({ x0: b.x0 + dx, x1: b.x1 + dx, y0: b.y0 + dy, y1: b.y1 + dy }, q => invX(q) + dx, q => invY(q) + dy);
+    } else if (ptrs.size === 2) {
+      const other = [...ptrs.entries()].find(([id]) => id !== e.pointerId)[1];
+      const d0 = Math.hypot(prev[0] - other[0], prev[1] - other[1]);
+      const d1 = Math.hypot(cur[0] - other[0], cur[1] - other[1]);
+      if (d0 > 0 && d1 > 0) z.zoomAt((cur[0] + other[0]) / 2, (cur[1] + other[1]) / 2, d0 / d1);
+    }
+    ptrs.set(e.pointerId, cur);
+  });
+  const up = e => ptrs.delete(e.pointerId);
+  canvas.addEventListener("pointerup", up);
+  canvas.addEventListener("pointercancel", up);
+  canvas.addEventListener("dblclick", z.reset);
+  return z;
+}
+
+function niceStep(span, target) {
+  const raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const n = raw / p;
+  return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * p;
+}
+const stepDecimals = st => Math.max(0, -Math.floor(Math.log10(st) + 1e-9));
+const tickLabel = (v, st) => (Math.abs(v) < st / 2 ? 0 : v).toFixed(stepDecimals(st));
+
+const zP = zoomable(cv);
+let autoSpan = 1;   // width of the auto-fit box, for the zoom-level readout
+
+function drawPoincare(state) {
+  const { ctx, W, H } = fitCanvas(cv);
+  ctx.clearRect(0, 0, W, H);
+  const ml = 62, mr = 18, mt = 38, mb = 50;
+  const pw = W - ml - mr, ph = H - mt - mb;
+
+  // boundary (ρ = 1) is fixed by construction -> auto-fit box from it
+  const bnd0 = surface(1, state.mu, state.zeta, 361);
+  let rmin = Infinity, rmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+  for (let i = 0; i < bnd0.R.length; i++) {
+    rmin = Math.min(rmin, bnd0.R[i]); rmax = Math.max(rmax, bnd0.R[i]);
+    zmin = Math.min(zmin, bnd0.Z[i]); zmax = Math.max(zmax, bnd0.Z[i]);
+  }
+  const pad = 0.12 * Math.max(rmax - rmin, zmax - zmin);
+  const auto = { x0: rmin - pad, x1: rmax + pad, y0: zmin - pad, y1: zmax + pad };
+  const want = zP.box || auto;
+
+  // equal aspect: fit the requested box into the plot rectangle
+  const sc = Math.min(pw / (want.x1 - want.x0), ph / (want.y1 - want.y0));
+  const cx = ml + pw / 2, cy = mt + ph / 2;
+  const rc = (want.x0 + want.x1) / 2, zc = (want.y0 + want.y1) / 2;
+  const X = r => cx + (r - rc) * sc, Y = z => cy - (z - zc) * sc;
+  const r0 = rc - pw / 2 / sc, r1 = rc + pw / 2 / sc;
+  const z0 = zc - ph / 2 / sc, z1 = zc + ph / 2 / sc;
+  zP.map = Object.assign(zP.map || {}, {
+    W, H, box: { x0: r0, x1: r1, y0: z0, y1: z1 },
+    invX: px => rc + (px - cx) / sc, invY: py => zc - (py - cy) / sc,
+  });
+  const autoSc = Math.min(pw / (auto.x1 - auto.x0), ph / (auto.y1 - auto.y0));
+  const zoom = sc / autoSc;
+  $("zoomv").textContent = "×" + (zoom < 10 ? zoom.toFixed(1) : zoom.toFixed(0));
+
+  // more points per surface when zoomed in, so curves stay smooth
+  const nth = 1 + 360 * Math.min(8, Math.max(1, Math.ceil(Math.sqrt(zoom))));
+
+  // grid + ticks
+  const st = niceStep(Math.max(r1 - r0, z1 - z0), 8);
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  ctx.fillStyle = css("--muted"); ctx.font = "13.8px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let r = Math.ceil(r0 / st) * st; r <= r1 + 1e-9 * st; r += st) {
+    ctx.beginPath(); ctx.moveTo(X(r), mt); ctx.lineTo(X(r), H - mb); ctx.stroke();
+    ctx.fillText(tickLabel(r, st), X(r), H - mb + 6);
+  }
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let z = Math.ceil(z0 / st) * st; z <= z1 + 1e-9 * st; z += st) {
+    ctx.beginPath(); ctx.moveTo(ml, Y(z)); ctx.lineTo(W - mr, Y(z)); ctx.stroke();
+    ctx.fillText(tickLabel(z, st), ml - 6, Y(z));
+  }
+  ctx.fillStyle = css("--ink"); ctx.font = "15px system-ui, sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.fillText("R [m]", ml + pw / 2, H - 6);
+  ctx.save(); ctx.translate(14, mt + ph / 2); ctx.rotate(-Math.PI / 2);
+  ctx.textBaseline = "middle"; ctx.fillText("Z [m]", 0, 0); ctx.restore();
+  ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(`Poincaré section  ζ = ${state.zeta.toFixed(4)} rad   ·   μ₀ = ${state.mu[0].toFixed(2)}`, ml, 10);
+
+  const poly = (s) => {
+    ctx.beginPath();
+    for (let i = 0; i < s.R.length; i++) {
+      const x = X(s.R[i]), y = Y(s.Z[i]);
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.closePath();
+  };
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ml, mt, pw, ph); ctx.clip();
+
+  const t0 = performance.now();
+  const rhos = [];
+  for (let i = 1; i <= state.nsurf; i++) rhos.push(i / state.nsurf);
+
+  // initial-guess reference at the same ρ values (dashed, same colour as its NN surface);
+  // ρ = 1 is skipped: there both coincide with the boundary by construction
+  if (state.ghost) {
+    ctx.lineWidth = 1.2; ctx.setLineDash([5, 4]); ctx.globalAlpha = 0.6;
+    for (const rho of rhos.slice(0, -1)) {
+      poly(surface(rho, null, state.zeta, nth));
+      ctx.strokeStyle = cmap(0.08 + 0.85 * rho); ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    const [ra, za] = pointRZ(0, 0, state.zeta, null);
+    ctx.strokeStyle = css("--ghost"); ctx.lineWidth = 1.5;
+    cross(ctx, X(ra), Y(za), 5);
+  }
+
+  // current equilibrium
+  ctx.lineWidth = 1.6;
+  for (const rho of rhos) {
+    poly(surface(rho, state.mu, state.zeta, nth));
+    if (rho === 1) { ctx.strokeStyle = css("--boundary"); ctx.lineWidth = 2; }
+    else ctx.strokeStyle = cmap(0.08 + 0.85 * rho);
+    ctx.stroke();
+  }
+  const [Ra, Za] = axisRZ(state.mu, state.zeta);
+  const [Rb0] = axisRZ(BASELINE, state.zeta);
+  const [Ran] = pointRZ(0, 0, state.zeta, null);
+  const t1 = performance.now();
+
+  ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2;
+  cross(ctx, X(Ra), Y(Za), 7);
+  ctx.restore();
+
+  $("sAxisR").textContent = Ra.toFixed(4) + " m";
+  $("sAxisZ").textContent = Za.toExponential(2) + " m";
+  const sh = Ra - Rb0;
+  const mm = v => (v >= 0 ? "+" : "") + (1000 * v).toFixed(1) + " mm";
+  $("sShift").textContent = mm(sh);
+  $("sShiftAn").textContent = mm(Ra - Ran);
+  $("sTime").textContent = (t1 - t0).toFixed(1) + " ms";
+}
+
+function cross(ctx, x, y, s) {
+  ctx.beginPath();
+  ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y + s);
+  ctx.moveTo(x - s, y + s); ctx.lineTo(x + s, y - s);
+  ctx.stroke();
+}
+
+// Colorbar in its own resizable box: bar width and label size follow the box
+function drawColorbar() {
+  const c = $("cbarcv");
+  const { ctx, W, H } = fitCanvas(c);
+  ctx.clearRect(0, 0, W, H);
+  // font follows the box but never drops below a readable size; the bar gives up
+  // width first, and a taller box gets more ticks instead of smaller text
+  const fs = Math.max(13.2, Math.min(28.8, W * 0.24, H / 6.7));
+  ctx.font = `${fs}px system-ui, sans-serif`;
+  const pad = Math.max(5, Math.min(12, W * 0.08));
+  const lw = ctx.measureText("0.75").width, gap = fs * 0.35 + 4;
+  const bw = Math.max(5, Math.min(48, W * 0.3, W - 2 * pad - lw - gap));
+  const bx = W - pad - bw, by = pad + fs * 1.4, bh = Math.max(4, H - by - pad - fs * 0.5);
+  for (let i = 0; i < bh; i++) { ctx.fillStyle = cmap(0.08 + 0.85 * (1 - i / bh)); ctx.fillRect(bx, by + i, bw, 1.5); }
+  ctx.fillStyle = css("--ink"); ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText("ρ", bx + bw / 2, pad);
+  const step = [0.05, 0.1, 0.2, 0.25, 0.5, 1].find(st => st * bh >= 1.8 * fs) || 1;
+  const dec = step < 0.1 || step === 0.25 ? 2 : 1;
+  ctx.fillStyle = css("--muted"); ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let i = 0; i * step <= 1 + 1e-9; i++) {
+    const t = i * step, y = by + (1 - t) * bh;
+    const lab = t < 1e-9 ? "0" : t > 1 - 1e-9 ? "1" : t.toFixed(dec).replace(/0+$/, "");
+    ctx.fillText(lab, bx - gap, y);
+    ctx.fillRect(bx - 4, y - 0.5, 4, 1);
+  }
+}
+
+// Profile plot: independent x/y zoom, tick density and font follow the canvas size
+const zProf = {};
+function drawProfile(canvasId, f, ymaxAuto, color) {
+  const c = $(canvasId);
+  const z = zProf[canvasId] || (zProf[canvasId] = zoomable(c));
+  const { ctx, W, H } = fitCanvas(c);
+  ctx.clearRect(0, 0, W, H);
+  const fs = Math.max(12.6, Math.min(20.4, Math.min(W / 11.7, H / 5.8)));
+  const ml = fs * 3.4, mr = fs * 0.8, mt = fs * 0.7, mb = fs * 2.3;
+  const pw = Math.max(1, W - ml - mr), ph = Math.max(1, H - mt - mb);
+  const b = z.box || { x0: 0, x1: 1, y0: 0, y1: ymaxAuto };
+  const X = r => ml + (r - b.x0) / (b.x1 - b.x0) * pw;
+  const Y = v => mt + ph - (v - b.y0) / (b.y1 - b.y0) * ph;
+  z.map = {
+    W, H, box: b,
+    invX: px => b.x0 + (px - ml) / pw * (b.x1 - b.x0),
+    invY: py => b.y0 + (mt + ph - py) / ph * (b.y1 - b.y0),
+  };
+
+  ctx.font = `${fs * 0.9}px system-ui, sans-serif`; ctx.lineWidth = 1;
+  const sx = niceStep(b.x1 - b.x0, Math.max(2, pw / (fs * 5)));
+  const sy = niceStep(b.y1 - b.y0, Math.max(2, ph / (fs * 2.6)));
+  ctx.strokeStyle = css("--grid"); ctx.fillStyle = css("--muted");
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let x = Math.ceil(b.x0 / sx) * sx; x <= b.x1 + 1e-9 * sx; x += sx) {
+    ctx.beginPath(); ctx.moveTo(X(x), mt); ctx.lineTo(X(x), mt + ph); ctx.stroke();
+    ctx.fillText(tickLabel(x, sx), X(x), mt + ph + fs * 0.3);
+  }
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let y = Math.ceil(b.y0 / sy) * sy; y <= b.y1 + 1e-9 * sy; y += sy) {
+    ctx.beginPath(); ctx.moveTo(ml, Y(y)); ctx.lineTo(ml + pw, Y(y)); ctx.stroke();
+    ctx.fillText(tickLabel(y, sy), ml - fs * 0.35, Y(y));
+  }
+  ctx.strokeStyle = css("--line");
+  ctx.strokeRect(ml, mt, pw, ph);
+  ctx.fillStyle = css("--muted"); ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.fillText("ρ", ml + pw / 2, H - 1);
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(ml, mt, pw, ph); ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, fs / 6); ctx.beginPath();
+  const n = Math.max(60, Math.round(pw / 2));
+  for (let i = 0; i <= n; i++) {
+    const r = b.x0 + (b.x1 - b.x0) * i / n;
+    if (r < 0 || r > 1) continue;
+    const x = X(r), y = Y(f(r));
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// β readout: exact value at the current μ₀ (debounced, cached) + β(μ₀) curve filled progressively
+const BETA_N = 24;
+const betaCache = new Map();
+function betaAt(mu0) {
+  const key = mu0.toFixed(4);
+  if (!betaCache.has(key)) betaCache.set(key, betaVol([mu0, MU1], BETA_N));
+  return betaCache.get(key);
+}
+const betaValue = r => r.betaSI;                 // convention shown (see betaHint)
+const fmtBeta = b => (100 * b).toFixed(b < 0.01 ? 3 : 2) + " %";
+
+let betaTimer = null, curveTimer = null;
+function scheduleBeta() {
+  clearTimeout(betaTimer);
+  betaTimer = setTimeout(updateBeta, 30);
+}
+function updateBeta() {
+  if (!MODEL) return;
+  const mu0 = +$("mu0").value;
+  const t0 = performance.now();
+  const b = betaValue(betaAt(mu0)), b1 = betaValue(betaAt(1));
+  $("betaV").textContent = fmtBeta(b);
+  const d = b - b1, el = $("betaD");
+  el.className = "bdelta " + (Math.abs(d) < 1e-12 ? "" : d > 0 ? "up" : "down");
+  el.textContent = Math.abs(d) < 1e-12 ? "baseline μ₀ = 1"
+    : `${d > 0 ? "▲" : "▼"} ${(d > 0 ? "+" : "−") + (100 * Math.abs(d)).toFixed(3)} pp vs μ₀ = 1  (×${(b / b1).toFixed(2)})`;
+  $("sBetaT").textContent = (performance.now() - t0).toFixed(0) + " ms";
+  drawBetaCurve();
+  clearTimeout(curveTimer);
+  curveTimer = setTimeout(fillBetaCurve, 60);
+}
+function curveMus() {
+  const lo = +$("mu0").min, hi = +$("mu0").max, n = 25;
+  return Array.from({ length: n }, (_, i) => lo + (hi - lo) * i / (n - 1));
+}
+function fillBetaCurve() {     // a few points per tick so the sliders stay responsive
+  const todo = curveMus().filter(m => !betaCache.has(m.toFixed(4)));
+  if (!todo.length) return;
+  const t0 = performance.now();
+  for (const m of todo) { betaAt(m); if (performance.now() - t0 > 40) break; }
+  drawBetaCurve();
+  curveTimer = setTimeout(fillBetaCurve, 0);
+}
+function drawBetaCurve() {
+  const c = $("betaplot");
+  const { ctx, W, H } = fitCanvas(c);
+  ctx.clearRect(0, 0, W, H);
+  const lo = +$("mu0").min, hi = +$("mu0").max, mu0 = +$("mu0").value;
+  const pts = curveMus().filter(m => betaCache.has(m.toFixed(4))).map(m => [m, betaValue(betaAt(m))]);
+  const cur = betaValue(betaAt(mu0));
+  const ymax = Math.max(cur, ...pts.map(p => p[1])) * 1.1 || 1;
+  const ml = 48, mr = 6, mt = 4, mb = 16;
+  const X = m => ml + (m - lo) / (hi - lo) * (W - ml - mr), Y = v => H - mb - v / ymax * (H - mt - mb);
+  ctx.strokeStyle = css("--line"); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ml, mt); ctx.lineTo(ml, H - mb); ctx.lineTo(W - mr, H - mb); ctx.stroke();
+  ctx.fillStyle = css("--muted"); ctx.font = "12px system-ui, sans-serif";
+  ctx.textAlign = "right"; ctx.textBaseline = "top"; ctx.fillText((100 * ymax / 1.1).toFixed(1) + " %", ml - 3, mt);
+  ctx.textBaseline = "bottom"; ctx.fillText("0", ml - 3, H - mb + 4);
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  ctx.fillText(String(+lo.toFixed(2)), X(lo), H - mb + 2); ctx.fillText(String(+hi.toFixed(2)), X(hi), H - mb + 2);
+  ctx.fillText("μ₀", (X(lo) + X(hi)) / 2, H - mb + 2);
+  if (1 >= lo && 1 <= hi) {                        // baseline marker
+    ctx.strokeStyle = css("--ghost"); ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(X(1), mt); ctx.lineTo(X(1), H - mb); ctx.stroke(); ctx.setLineDash([]);
+  }
+  if (pts.length > 1) {
+    ctx.strokeStyle = css("--accent"); ctx.lineWidth = 1.8; ctx.beginPath();
+    pts.forEach(([m, v], i) => i ? ctx.lineTo(X(m), Y(v)) : ctx.moveTo(X(m), Y(v)));
+    ctx.stroke();
+  }
+  ctx.fillStyle = css("--accent"); ctx.strokeStyle = css("--panel"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(X(mu0), Y(cur), 4.5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+}
+
+// ---------------------------------------------------------------------------
+// 3D view: nested flux surfaces cut open at the Poincaré plane φ = ζ (three.js / WebGL).
+// All surfaces start at the cut plane, where the section is filled with the same colour
+// bands as the Poincaré panel; each one runs a different length around the torus
+// (inner ones further), so moving ζ slides the cut around the machine.
+// Geometry: x = R cos ζ, y = R sin ζ, z = Z (ζ is the cylindrical toroidal angle).
+// ---------------------------------------------------------------------------
+const NTH3 = 72, NZE3 = 180;         // θ points per ring, rings per full toroidal turn
+let MMAX = 0;
+
+// cos/sin(mθ) tables for a ring of nth+1 points (seam duplicated)
+const ringTrig = {};
+function mTable(nth) {
+  const key = nth + "|" + MMAX;
+  if (ringTrig.key === key) return ringTrig;
+  const MM = MMAX + 1, c = new Float64Array((nth + 1) * MM), s = new Float64Array((nth + 1) * MM);
+  for (let t = 0; t <= nth; t++) for (let m = 0; m < MM; m++) {
+    const a = nth ? m * 2 * Math.PI * t / nth : 0;
+    c[t * MM + m] = Math.cos(a); s[t * MM + m] = Math.sin(a);
+  }
+  return Object.assign(ringTrig, { key, c, s });
+}
+
+// Cartesian points of the surface with amplitudes (Rm, Zm) on rings at the given ζ.
+// Fourier sum factorised: cos(mθ − nNζ) = cos mθ cos nNζ + sin mθ sin nNζ, so each ring
+// costs K trig calls plus (M+1) per point instead of K per point.
+function ringGrid(Rm, Zm, zetas, nth) {
+  const MM = MMAX + 1, nfp = MODEL.nfp, T = mTable(nth);
+  const out = new Float32Array(zetas.length * (nth + 1) * 3);
+  const A = new Float64Array(MM), B = new Float64Array(MM), C = new Float64Array(MM), D = new Float64Array(MM);
+  let o = 0;
+  for (const ze of zetas) {
+    A.fill(0); B.fill(0); C.fill(0); D.fill(0);
+    for (let k = 0; k < K; k++) {
+      const ph = N_ARR[k] * nfp * ze, cn = Math.cos(ph), sn = Math.sin(ph), m = M_ARR[k];
+      A[m] += Rm[k] * cn; B[m] += Rm[k] * sn; C[m] += Zm[k] * cn; D[m] += Zm[k] * sn;
+    }
+    const cz = Math.cos(ze), sz = Math.sin(ze);
+    for (let t = 0; t <= nth; t++) {
+      let R = 0, Z = 0;
+      const b = t * MM;
+      for (let m = 0; m < MM; m++) {
+        const c = T.c[b + m], s = T.s[b + m];
+        R += A[m] * c + B[m] * s;
+        Z += C[m] * s - D[m] * c;
+      }
+      out[o++] = R * cz; out[o++] = R * sz; out[o++] = Z;
+    }
+  }
+  return out;
+}
+
+const CAM0 = { az: -1.25, el: 0.62, zoom: 1, tx: 0, ty: 0, tz: 0 };
+const V3 = { ok: false, key: null, cam: { ...CAM0 }, surfs: [] };
+
+function init3D() {
+  const msg = $("msg3d");
+  if (!window.THREE) { msg.textContent = "3D view needs three.js from cdnjs — are you offline?"; return; }
+  const canvas = $("c3d");
+  let renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }); }
+  catch (e) { msg.textContent = "WebGL is not available in this browser."; return; }
+  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(32, 1, 0.005, 100);
+  camera.up.set(0, 0, 1);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x60606a, 0.8));
+  const head = new THREE.DirectionalLight(0xffffff, 0.55);   // headlight, follows the camera
+  head.position.set(0.6, 1, 0.8);
+  camera.add(head); scene.add(camera);
+  const group = new THREE.Group(); scene.add(group);
+  Object.assign(V3, { ok: true, renderer, scene, camera, group });
+  setup3DInput(canvas);
+}
+
+function disposeGroup(g) {
+  for (const o of [...g.children]) {
+    g.remove(o);
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) o.material.dispose();
+  }
+}
+
+const rgbColor = str => new THREE.Color(str);
+// 3D colours come from the 3D panel's own palette, independent of the 2D one
+const color3D = rho => cmapWith(PALETTES[$("v3pal").value] || PALETTES.viridis, false, 0.08 + 0.85 * rho);
+
+// index buffer for a strip of rings (shared by every surface)
+function stripIndex(nRings, nth) {
+  const idx = new Uint32Array((nRings - 1) * nth * 6);
+  let o = 0;
+  for (let i = 0; i < nRings - 1; i++) for (let t = 0; t < nth; t++) {
+    const a = i * (nth + 1) + t, b = a + 1, c = a + nth + 1, d = c + 1;
+    idx[o++] = a; idx[o++] = c; idx[o++] = b;
+    idx[o++] = b; idx[o++] = c; idx[o++] = d;
+  }
+  return idx;
+}
+
+// (Re)build the surfaces when μ, the surface count, the palette or the model change
+function build3D(state) {
+  const n3 = +$("v3n").value;
+  const key = [MODEL_ID, state.mu[0], n3, $("v3pal").value].join("|");
+  if (V3.key === key) return;
+  V3.key = key;
+  const { group } = V3;
+  disposeGroup(group);
+  V3.surfs = [];
+
+  const zetas = Array.from({ length: NZE3 + 1 }, (_, i) => 2 * Math.PI * i / NZE3);
+  const idx = new THREE.BufferAttribute(stripIndex(2 * NZE3 + 1, NTH3), 1);
+  const ringLen = (NTH3 + 1) * 3;
+  for (let j = 1; j <= n3; j++) {
+    const rho = j / n3;
+    const [Rm, Zm] = amplitudes(rho, state.mu);
+    const one = ringGrid(Rm, Zm, zetas, NTH3);             // one turn, NZE3 + 1 rings
+    const pos = new Float32Array((2 * NZE3 + 1) * ringLen); // two turns -> any window is contiguous
+    pos.set(one, 0);
+    pos.set(one.subarray(ringLen), (NZE3 + 1) * ringLen);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshPhongMaterial({
+      color: rgbColor(color3D(rho)),
+      side: THREE.DoubleSide, shininess: 35, specular: 0x222222,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    group.add(mesh);
+    // fraction of the torus this surface covers after the cut: boundary shortest, inner ones longer
+    const span = 0.3 + 0.5 * (1 - rho) / Math.max(1e-9, 1 - 1 / n3);
+    V3.surfs.push({ rho, Rm, Zm, mesh, pos, span, patch: null });
+  }
+
+  // transparent whole boundary
+  const b = V3.surfs[V3.surfs.length - 1];
+  const gGeo = new THREE.BufferGeometry();
+  gGeo.setAttribute("position", new THREE.BufferAttribute(b.pos.slice(0, (NZE3 + 1) * ringLen), 3));
+  gGeo.setIndex(new THREE.BufferAttribute(stripIndex(NZE3 + 1, NTH3), 1));
+  gGeo.computeVertexNormals();
+  V3.ghost = new THREE.Mesh(gGeo, new THREE.MeshPhongMaterial({
+    color: 0x8a8f99, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide,
+  }));
+  group.add(V3.ghost);
+
+  // magnetic axis
+  const [Ra0, Za0] = amplitudes(0, state.mu);
+  const ax = ringGrid(Ra0, Za0, zetas, 0);
+  const aGeo = new THREE.BufferGeometry();
+  aGeo.setAttribute("position", new THREE.BufferAttribute(ax, 3));
+  V3.axis = new THREE.Line(aGeo, new THREE.LineBasicMaterial({ color: 0xffffff }));
+  group.add(V3.axis);
+
+  V3.cutKey = null;
+  // radius of a sphere around the whole machine, for the auto-fit camera distance
+  let r2 = 0;
+  for (let i = 0; i < b.pos.length; i += 3) r2 = Math.max(r2, b.pos[i] ** 2 + b.pos[i + 1] ** 2 + b.pos[i + 2] ** 2);
+  V3.rFit = Math.sqrt(r2);
+}
+
+// Cut plane at ζ: filled colour bands between consecutive surfaces + ring outlines,
+// and every surface's first ring snapped exactly onto the cut
+function update3DCut(state) {
+  const ze = ((state.zeta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+  const key = [V3.key, ze, state.nsurf].join("|");
+  if (V3.cutKey === key) return;
+  V3.cutKey = key;
+  const ringLen = (NTH3 + 1) * 3, dz = 2 * Math.PI / NZE3;
+  const i0 = Math.floor(ze / dz + 1e-9);
+
+  for (const s of V3.surfs) {
+    const attr = s.mesh.geometry.getAttribute("position");
+    if (s.patch) s.pos.set(s.patch.saved, s.patch.i * ringLen);      // undo the previous snap
+    const exact = ringGrid(s.Rm, s.Zm, [ze], NTH3);
+    s.patch = { i: i0, saved: s.pos.slice(i0 * ringLen, (i0 + 1) * ringLen) };
+    s.pos.set(exact, i0 * ringLen);
+    attr.needsUpdate = true;
+    const strips = Math.max(1, Math.ceil(s.span * NZE3));
+    s.mesh.geometry.setDrawRange(i0 * NTH3 * 6, strips * NTH3 * 6);
+  }
+
+  // section: same ρ values as the Poincaré panel
+  if (V3.cut) { V3.group.remove(V3.cut); V3.cut.geometry.dispose(); V3.cut.material.dispose(); }
+  if (V3.cutLines) { V3.group.remove(V3.cutLines); V3.cutLines.geometry.dispose(); V3.cutLines.material.dispose(); }
+  const mu = state.mu, n = state.nsurf;
+  const [Ra0, Za0] = amplitudes(0, mu);
+  const axisPt = ringGrid(Ra0, Za0, [ze], 0);
+  V3.cutCenter = [axisPt[0], axisPt[1], axisPt[2]];
+  let inner = null;
+  const P = [], Cl = [], L = [];
+  for (let i = 1; i <= n; i++) {
+    const rho = i / n;
+    const [Rm, Zm] = amplitudes(rho, mu);
+    const ring = ringGrid(Rm, Zm, [ze], NTH3);
+    const col = rgbColor(color3D(rho));
+    for (let t = 0; t < NTH3; t++) {
+      const o0 = t * 3, o1 = (t + 1) * 3;
+      const q = (arr, o) => [arr[o], arr[o + 1], arr[o + 2]];
+      const a0 = inner ? q(inner, o0) : q(axisPt, 0), a1 = inner ? q(inner, o1) : q(axisPt, 0);
+      const b0 = q(ring, o0), b1 = q(ring, o1);
+      P.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+      for (let r = 0; r < 6; r++) Cl.push(col.r, col.g, col.b);
+      L.push(...b0, ...b1);
+    }
+    inner = ring;
+  }
+  const cGeo = new THREE.BufferGeometry();
+  cGeo.setAttribute("position", new THREE.Float32BufferAttribute(P, 3));
+  cGeo.setAttribute("color", new THREE.Float32BufferAttribute(Cl, 3));
+  V3.cut = new THREE.Mesh(cGeo, new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+  }));
+  const lGeo = new THREE.BufferGeometry();
+  lGeo.setAttribute("position", new THREE.Float32BufferAttribute(L, 3));
+  V3.cutLines = new THREE.LineSegments(lGeo, new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 }));
+  V3.group.add(V3.cut, V3.cutLines);
+}
+
+// camera distance that fits the whole torus in the narrower of the two fields of view
+function fitDist(camera) {
+  const half = THREE.MathUtils.degToRad(camera.fov / 2);
+  const halfH = Math.atan(Math.tan(half) * camera.aspect);
+  return 1.08 * (V3.rFit || 1) / Math.sin(Math.min(half, halfH));
+}
+
+function draw3D() {
+  if (!V3.ok || !MODEL) return;
+  const { renderer, camera, scene, cam } = V3;
+  const c = renderer.domElement, w = c.clientWidth, h = c.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    renderer.setPixelRatio(dpr);
+    renderer.setSize(w, h, false);
+  }
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  // follow ζ: close-up that stays on the cut (target = axis point of the section,
+  // view direction rotates with ζ); otherwise the whole machine around the origin
+  const st = readState(), follow = $("v3follow").checked && V3.cutCenter;
+  const az = cam.az + (follow ? st.zeta : 0);
+  const dist = fitDist(camera) * (follow ? 0.24 : 1) / cam.zoom;
+  const c0 = follow ? V3.cutCenter : [0, 0, 0];
+  const tx = c0[0] + cam.tx, ty = c0[1] + cam.ty, tz = c0[2] + cam.tz;
+  camera.position.set(
+    tx + dist * Math.cos(cam.el) * Math.cos(az),
+    ty + dist * Math.cos(cam.el) * Math.sin(az),
+    tz + dist * Math.sin(cam.el));
+  camera.lookAt(tx, ty, tz);
+  if (V3.ghost) V3.ghost.visible = $("v3ghost").checked;
+  if (V3.axis) V3.axis.material.color.set(css("--ink"));
+  if (V3.cutLines) V3.cutLines.material.color.set(css("--ink"));
+  renderer.render(scene, camera);
+}
+
+let v3pending = false;
+function request3D() {
+  if (v3pending) return;
+  v3pending = true;
+  requestAnimationFrame(() => { v3pending = false; draw3D(); });
+}
+
+function update3D(state) {
+  if (!V3.ok) return;
+  const t0 = performance.now();
+  build3D(state);
+  update3DCut(state);
+  $("v3t").textContent = `3D flux surfaces · cut at ζ = ${state.zeta.toFixed(4)} rad · μ₀ = ${state.mu[0].toFixed(2)}`;
+  draw3D();
+  $("s3dT").textContent = (performance.now() - t0).toFixed(0) + " ms";
+}
+
+// orbit: drag = rotate, shift / right-drag = pan, wheel / pinch = zoom, double-click = reset
+function setup3DInput(canvas) {
+  const cam = () => V3.cam;
+  const ptrs = new Map();
+  let panMode = false;
+  canvas.addEventListener("contextmenu", e => e.preventDefault());
+  canvas.addEventListener("pointerdown", e => {
+    canvas.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    panMode = e.shiftKey || e.button === 2;
+  });
+  canvas.addEventListener("pointermove", e => {
+    if (!ptrs.has(e.pointerId)) return;
+    const [x0, y0] = ptrs.get(e.pointerId), dx = e.clientX - x0, dy = e.clientY - y0;
+    const c = cam();
+    if (ptrs.size === 1 && !panMode) {
+      c.az -= dx * 0.008;
+      c.el = Math.max(-1.45, Math.min(1.45, c.el + dy * 0.008));
+    } else if (ptrs.size === 1) {
+      const cm = V3.camera, right = new THREE.Vector3(), up = new THREE.Vector3();
+      cm.matrixWorld.extractBasis(right, up, new THREE.Vector3());
+      const k = fitDist(V3.camera) * ($("v3follow").checked ? 0.24 : 1) / c.zoom * 0.0012;
+      c.tx += (-dx * right.x + dy * up.x) * k;
+      c.ty += (-dx * right.y + dy * up.y) * k;
+      c.tz += (-dx * right.z + dy * up.z) * k;
+    } else if (ptrs.size === 2) {
+      const other = [...ptrs.entries()].find(([id]) => id !== e.pointerId)[1];
+      const d0 = Math.hypot(x0 - other[0], y0 - other[1]), d1 = Math.hypot(e.clientX - other[0], e.clientY - other[1]);
+      if (d0 > 0 && d1 > 0) c.zoom = Math.max(0.3, Math.min(20, c.zoom * d1 / d0));
+    }
+    ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+    request3D();
+  });
+  const up = e => ptrs.delete(e.pointerId);
+  canvas.addEventListener("pointerup", up);
+  canvas.addEventListener("pointercancel", up);
+  canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+    const d = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    const c = cam();
+    c.zoom = Math.max(0.3, Math.min(20, c.zoom * Math.exp(-Math.max(-0.5, Math.min(0.5, d * 0.0015)))));
+    request3D();
+  }, { passive: false });
+  canvas.addEventListener("dblclick", reset3DView);
+}
+
+function reset3DView() {
+  V3.cam = { ...CAM0 };
+  request3D();
+}
+
+// ---------------------------------------------------------------------------
+// State & UI
+// ---------------------------------------------------------------------------
+const TRAIN_RANGE = { mu0: [0.1, 5] };
+const EXTRAP_RANGE = { mu0: [0, 8] };
+let MODEL_ID = 0;           // bumped on every model load (3D geometry cache key)
+let MU1 = 1;                // iota amplitude: fixed, taken from the (degenerate) training box
+let BASELINE = [1, MU1];
+
+function readState() {
+  const nfp = MODEL ? MODEL.nfp : 5;
+  const zf = +$("zeta").value;
+  return {
+    mu: [+$("mu0").value, MU1],
+    zeta: zf * 2 * Math.PI / nfp,
+    zfrac: zf,
+    nsurf: +$("nsurf").value,
+    ghost: $("ghost").checked,
+  };
+}
+
+let pending = false;
+function schedule() {
+  if (pending) return;
+  pending = true;
+  requestAnimationFrame(() => { pending = false; render(); });
+}
+
+function inDomain(mu) {
+  const d = MODEL.domain_mu ? MODEL.domain_mu[0] : TRAIN_RANGE.mu0;
+  return mu[0] >= 0 && mu[0] <= d[1];
+}
+
+function render() {
+  if (!MODEL) return;
+  const s = readState();
+  $("mu0v").textContent = s.mu[0].toFixed(2);
+  $("mu1v").textContent = `μ₁ = ${+s.mu[1].toFixed(2)}`;
+  $("nsurfv").textContent = s.nsurf;
+  $("zetav").textContent = `${s.zfrac.toFixed(3)} · 2π/NFP`;
+  const d = MODEL.domain_mu;
+  const tb = blendT(s.mu[0]);
+  $("sDomain").innerHTML = (inDomain(s.mu)
+    ? `<span class="badge ok">inside</span>`
+    : `<span class="badge warn">extrapolating</span>`)
+    + ` <span class="badge">NN weight ${(100 * tb).toFixed(0)} %</span>`;
+  $("sDomain").title = `μ₀ ∈ [${d[0]}], μ₁ = ${d[1][0]}`;
+  drawPoincare(s);
+  drawColorbar();
+  update3D(s);
+  scheduleBeta();
+  const pmax = 340 * Math.max(5, s.mu[0]);
+  drawProfile("pplot", r => 340 * s.mu[0] * (1 - r * r) ** 2, pmax, css("--accent"));
+  drawProfile("iplot", r => s.mu[1] * (0.35 + 0.65 * r * r), 1.2 * s.mu[1], css("--muted"));
+}
+
+function setRanges(extrap) {
+  // lower end always 0: the animation starts from the initial guess
+  const R = extrap ? EXTRAP_RANGE : { mu0: [0, (MODEL && MODEL.domain_mu ? MODEL.domain_mu[0] : TRAIN_RANGE.mu0)[1]] };
+  for (const id of ["mu0"]) {
+    const el = $(id), v = +el.value;
+    el.min = R[id][0]; el.max = R[id][1];
+    el.value = Math.min(R[id][1], Math.max(R[id][0], v));
+  }
+}
+
+for (const id of ["mu0", "zeta", "nsurf", "ghost"]) $(id).addEventListener("input", schedule);
+for (const b of document.querySelectorAll("[data-zeta]"))
+  b.addEventListener("click", () => { $("zeta").value = b.dataset.zeta; schedule(); });
+$("extrap").addEventListener("change", e => { setRanges(e.target.checked); schedule(); });
+$("reset").addEventListener("click", () => { $("mu0").value = 1; schedule(); });
+
+// ▶ Play: sweep μ₀ from 0 (initial guess) to the slider max (PINN equilibrium), then stop
+const PLAY_SECONDS = 6;
+let playRaf = null;
+function stopPlay() {
+  if (playRaf) cancelAnimationFrame(playRaf);
+  playRaf = null;
+  $("play").textContent = "▶ Play 0 → μ₀,max";
+  $("play").setAttribute("aria-pressed", "false");
+}
+$("play").addEventListener("click", () => {
+  if (playRaf) { stopPlay(); return; }
+  const el = $("mu0"), lo = +el.min, hi = +el.max;
+  const t0 = performance.now();
+  $("play").textContent = "■ Stop";
+  $("play").setAttribute("aria-pressed", "true");
+  const step = now => {
+    const f = Math.min(1, (now - t0) / (1000 * PLAY_SECONDS));
+    el.value = lo + f * (hi - lo);
+    render();
+    if (f < 1) playRaf = requestAnimationFrame(step); else stopPlay();
+  };
+  playRaf = requestAnimationFrame(step);
+});
+$("mu0").addEventListener("pointerdown", stopPlay);
+window.addEventListener("resize", schedule);
+if (window.ResizeObserver) {
+  const ro = new ResizeObserver(schedule);
+  for (const id of ["poincare", "pplot", "iplot", "cbar", "profiles"]) ro.observe($(id));
+  new ResizeObserver(request3D).observe($("c3d"));
+}
+$("v3ghost").addEventListener("change", request3D);
+$("v3follow").addEventListener("change", () => { Object.assign(V3.cam, { tx: 0, ty: 0, tz: 0, zoom: 1 }); request3D(); });
+$("v3n").addEventListener("change", schedule);
+try { const p3 = localStorage.getItem("torsatron-pal3d"); if (PALETTES[p3]) $("v3pal").value = p3; } catch (e) {}
+$("v3pal").addEventListener("change", () => {
+  try { localStorage.setItem("torsatron-pal3d", $("v3pal").value); } catch (e) {}
+  schedule();
+});
+$("v3reset").addEventListener("click", reset3DView);
+
+// Splitters (kept per viewer): gutter = controls column width, gutter2 = Poincaré / 3D split
+const mainEl = document.querySelector("main");
+const PANEL_MIN = 240;
+function setSide(w) {
+  const r = mainEl.getBoundingClientRect();
+  const max = r.width - 48 - 2 * 16 - 2 * PANEL_MIN;
+  w = Math.round(Math.min(max, Math.max(260, w)));
+  mainEl.style.setProperty("--side", w + "px");
+  try { localStorage.setItem("torsatron-side", w); } catch (e) {}
+}
+function setSplit(f) {
+  f = Math.min(0.85, Math.max(0.15, f));
+  mainEl.style.setProperty("--pfr", f + "fr");
+  mainEl.style.setProperty("--tfr", (1 - f) + "fr");
+  try { localStorage.setItem("torsatron-split", f); } catch (e) {}
+}
+function resetSide() {
+  mainEl.style.removeProperty("--side");
+  try { localStorage.removeItem("torsatron-side"); } catch (e) {}
+}
+function resetSplit() {
+  mainEl.style.removeProperty("--pfr"); mainEl.style.removeProperty("--tfr");
+  try { localStorage.removeItem("torsatron-split"); } catch (e) {}
+}
+try {
+  const w = +localStorage.getItem("torsatron-side"); if (w) setSide(w);
+  const f = +localStorage.getItem("torsatron-split"); if (f) setSplit(f);
+} catch (e) {}
+
+function makeSplitter(g, start, move, reset) {
+  let drag = null;
+  g.addEventListener("pointerdown", e => {
+    drag = { id: e.pointerId, x0: e.clientX, s: start() };
+    g.setPointerCapture(e.pointerId);
+    g.classList.add("drag"); document.body.classList.add("resizing");
+    e.preventDefault();
+  });
+  g.addEventListener("pointermove", e => {
+    if (drag && e.pointerId === drag.id) move(drag.s, e.clientX - drag.x0);
+  });
+  const end = () => { drag = null; g.classList.remove("drag"); document.body.classList.remove("resizing"); };
+  g.addEventListener("pointerup", end);
+  g.addEventListener("pointercancel", end);
+  g.addEventListener("dblclick", reset);
+}
+makeSplitter($("gutter"),
+  () => mainEl.querySelector(".controls").getBoundingClientRect().width,
+  (w0, dx) => setSide(w0 + dx), resetSide);
+makeSplitter($("gutter2"),
+  () => [cv.parentElement.getBoundingClientRect().width, $("view3d").getBoundingClientRect().width],
+  ([pw, tw], dx) => setSplit((pw + dx) / (pw + tw)), resetSplit);
+
+// Surface palette (kept per viewer)
+function setPalette() {
+  PAL = PALETTES[$("palette").value] || PALETTES.viridis;
+  PAL_REV = $("palrev").checked;
+  try { localStorage.setItem("torsatron-pal", JSON.stringify([$("palette").value, PAL_REV])); } catch (e) {}
+  schedule();
+}
+try {
+  const [name, rev] = JSON.parse(localStorage.getItem("torsatron-pal") || "null") || [];
+  if (PALETTES[name]) $("palette").value = name;
+  $("palrev").checked = !!rev;
+} catch (e) {}
+PAL = PALETTES[$("palette").value]; PAL_REV = $("palrev").checked;
+$("palette").addEventListener("change", setPalette);
+$("palrev").addEventListener("change", setPalette);
+
+// Poincaré zoom buttons
+$("zin").addEventListener("click", () => zP.zoomCenter(1 / 1.5));
+$("zout").addEventListener("click", () => zP.zoomCenter(1.5));
+$("zfit").addEventListener("click", zP.reset);
+
+// Enlarge / restore the profiles panel
+function setProfilesBig(on) {
+  $("profwrap").classList.toggle("big", on);
+  $("backdrop").classList.toggle("on", on);
+  $("profBig").textContent = on ? "✕ Close" : "⤢ Enlarge";
+  $("profBig").setAttribute("aria-expanded", on);
+  if (!on) $("profwrap").style.width = $("profwrap").style.height = "";   // drop the user's floating size
+  schedule();
+}
+$("profBig").addEventListener("click", () => setProfilesBig(!$("profwrap").classList.contains("big")));
+$("backdrop").addEventListener("click", () => setProfilesBig(false));
+window.addEventListener("keydown", e => { if (e.key === "Escape") setProfilesBig(false); });
+
+// Colorbar box: drag to move (the native corner handle resizes), double-click resets
+(() => {
+  const box = $("cbar"), host = box.parentElement;
+  let drag = null;
+  box.addEventListener("pointerdown", e => {
+    const r = box.getBoundingClientRect();
+    if (e.clientX > r.right - 18 && e.clientY > r.bottom - 18) return;   // resize corner
+    const h = host.getBoundingClientRect();
+    drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top, h };
+    box.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  box.addEventListener("pointermove", e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { h } = drag, w = box.offsetWidth, ht = box.offsetHeight;
+    const x = Math.min(h.width - w, Math.max(0, e.clientX - h.left - drag.dx));
+    const y = Math.min(h.height - ht, Math.max(0, e.clientY - h.top - drag.dy));
+    Object.assign(box.style, { left: x + "px", top: y + "px" });
+  });
+  const end = () => { drag = null; };
+  box.addEventListener("pointerup", end);
+  box.addEventListener("pointercancel", end);
+  box.addEventListener("dblclick", resetColorbar);
+})();
+function resetColorbar() {
+  for (const k of ["left", "top", "width", "height"]) $("cbar").style[k] = "";
+  schedule();
+}
+
+// Panel resets (Panels section of the controls)
+function resetControlsPanel() {
+  resetSide();
+  setProfilesBig(false);
+  $("profiles").style.height = "";
+  for (const z of Object.values(zProf)) z.box = null;
+  schedule();
+}
+function resetPoincarePanel() { resetSplit(); zP.reset(); resetColorbar(); }
+function reset3DPanel() { resetSplit(); reset3DView(); }
+$("rsCtl").addEventListener("click", resetControlsPanel);
+$("rsPoin").addEventListener("click", resetPoincarePanel);
+$("rs3d").addEventListener("click", reset3DPanel);
+$("rsAll").addEventListener("click", () => { resetControlsPanel(); resetPoincarePanel(); reset3DPanel(); });
+if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", schedule);
+
+cv.addEventListener("pointermove", e => {
+  if (!zP.map) return;
+  const r = cv.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const R = zP.map.invX(x), Z = zP.map.invY(y);
+  $("readout").textContent = `R = ${R.toFixed(3)} m   Z = ${Z.toFixed(3)} m`;
+});
+cv.addEventListener("pointerleave", () => { $("readout").textContent = ""; });
+
+$("file").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  try {
+    loadModel(JSON.parse(await f.text()), f.name);
+  } catch (err) {
+    alert("Could not load weights: " + err.message);
+  }
+});
+
+function loadModel(model, label) {
+  prepareModel(model);
+  MODEL_ID++;
+  betaCache.clear();
+  MU1 = model.domain_mu ? model.domain_mu[1][0] : 1;
+  BASELINE = [1, MU1];
+  const sizes = NET.map(l => `${l.inp}→${l.out}`).join(", ");
+  const nparams = NET.reduce((a, l) => a + l.W.length + l.b.length, 0);
+  $("modelinfo").textContent =
+    `${model.name || "model"} · ${label} · NFP = ${model.nfp} · K = ${K} modes · layers ${sizes} · ${nparams.toLocaleString()} parameters`;
+  setRanges($("extrap").checked);
+  selfCheck();
+  render();
+}
+
+init3D();
+if (window.PINN_MODEL) loadModel(window.PINN_MODEL, "model.js");
+else $("modelinfo").textContent = "model.js not found — run export_weights.py or load a .json with the button above.";
+</script>
+</body>
+</html>

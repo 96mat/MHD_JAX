@@ -22,3 +22,5 @@ This test case refers to the most advanced Helitron stellarator ever built, whic
 # CTH Test Case: [link](https://96mat.github.io/MHD_JAX/CTH/)
 The [Compact Toroidal Hybrid](https://www.tandfonline.com/doi/full/10.1080/15361055.2017.1291046) device is a torsatron stellarator concept that combines aspects of classical stellarator and tokamak reactors. This example case can be visualized [here](https://96mat.github.io/MHD_JAX/CTH/)
 
+# Quasi-Symmetric (HSX-like) Test Case: [link](https://96mat.github.io/MHD_JAX/QS_HSX/)
+The [Quasi-Symmetric](https://pubs.aip.org/aip/pop/article-abstract/4/9/3323/457323/Omnigenity-and-quasihelicity-in-helical-plasma?redirectedFrom=fulltext) stellarator concept exploits the omnigeneity of the magnetic field to combine the inherent steady-state capabilities of stellarators with reduced neoclassical transport, a property naturally exhibited by tokamaks due to their axisymmetry.

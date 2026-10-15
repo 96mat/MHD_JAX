@@ -209,7 +209,11 @@
     <div class="ctl">
       <label for="mu0">Pressure amplitude μ₀ <span class="val" id="mu0v"></span></label>
       <input type="range" id="mu0" min="0.1" max="5" step="0.01" value="1">
+      <div class="row" style="margin-top:6px">
+        <button type="button" id="play0" aria-pressed="false">▶ Play 0 → μ₀,max</button>
+      </div>
       <div class="hint">p(ρ) = μ₀ · 34 kPa · (1 − ρ²)²</div>
+      <div class="hint">Surfaces: X(μ₀) = X<sub>init</sub> + (μ₀/μ₀,max)·[X<sub>NN</sub>(μ₀) − X<sub>init</sub>] — μ₀ = 0 is the initial guess (VMEC axis), μ₀ = μ₀,max is the PINN equilibrium (ι fixed)</div>
     </div>
     <div class="betatile">
       <div class="brow">
@@ -386,15 +390,38 @@ function forward(x) {
   return h;
 }
 
-// Radial Fourier amplitudes R_mn(ρ), Z_mn(ρ) for a given μ
+// Blend weight of the network w.r.t. the initial guess, driven by μ₀:
+// 0 at μ₀ = 0, 1 at the top of the training box. Used by the μ₀ Play button
+// (0 -> initial guess). μ₁ (iota amplitude) is fixed for W7-X.
+function blendT0(mu0) {
+  const hi = MODEL.domain_mu ? MODEL.domain_mu[0][1] : TRAIN_RANGE.mu0[1];
+  return Math.min(1, Math.max(0, mu0 / hi));
+}
+// network μ₀ input, clamped to the training box (below it the blend toward the
+// initial guess takes over) unless "allow extrapolation" is checked.
+function netMu0(mu0) {
+  if ($("extrap").checked) return mu0;
+  const lo = MODEL.domain_mu ? MODEL.domain_mu[0][0] : TRAIN_RANGE.mu0[0];
+  return Math.max(lo, mu0);
+}
+
+// Radial Fourier amplitudes R_mn(ρ), Z_mn(ρ) for a given μ:
+//   X(μ₀) = X_init + t(μ₀)·[X_NN(μ₀) − X_init],  t = μ₀/μ₀,max
 function amplitudes(rho, mu) {
-  const out = forward([2 * rho * rho - 1, mu[0], mu[1]]);
+  const out = forward([2 * rho * rho - 1, netMu0(mu[0]), mu[1]]);
   const Rm = new Float64Array(K), Zm = new Float64Array(K);
   const dist = 1 - rho * rho;
   for (let k = 0; k < K; k++) {
     const rm = Math.pow(rho, M_ARR[k]);   // 0**0 = 1 in JS, as in JAX
     Rm[k] = rm * (RB[k] + dist * out[k]);
     Zm[k] = rm * (ZB[k] + dist * out[2 * K + k]);
+  }
+  const t = blendT0(mu[0]);
+  if (t === 1) return [Rm, Zm];
+  const [Ri, Zi] = analyticAmplitudes(rho);
+  for (let k = 0; k < K; k++) {
+    Rm[k] = Ri[k] + t * (Rm[k] - Ri[k]);
+    Zm[k] = Zi[k] + t * (Zm[k] - Zi[k]);
   }
   return [Rm, Zm];
 }
@@ -1324,9 +1351,11 @@ function render() {
   $("nsurfv").textContent = s.nsurf;
   $("zetav").textContent = `${s.zfrac.toFixed(3)} · 2π/NFP`;
   const d = MODEL.domain_mu;
-  $("sDomain").innerHTML = inDomain(s.mu)
+  const tb = blendT0(s.mu[0]);
+  $("sDomain").innerHTML = (inDomain(s.mu)
     ? `<span class="badge ok">inside</span>`
-    : `<span class="badge warn">extrapolating</span>`;
+    : `<span class="badge warn">extrapolating</span>`)
+    + ` <span class="badge">NN weight ${(100 * tb).toFixed(0)} %</span>`;
   $("sDomain").title = `μ₀ ∈ [${d[0]}], μ₁ = ${d[1][0]}`;
   drawPoincare(s);
   drawColorbar();
@@ -1338,8 +1367,12 @@ function render() {
 }
 
 function setRanges(extrap) {
-  const R = extrap ? EXTRAP_RANGE : (MODEL && MODEL.domain_mu
+  const Rfull = extrap ? EXTRAP_RANGE : (MODEL && MODEL.domain_mu
     ? { mu0: MODEL.domain_mu[0] } : TRAIN_RANGE);
+  // mu0 lower bound is always 0, extrap or not: the Play button needs to reach
+  // the initial guess (blendT0 -> 0) even when "allow extrapolation" is off —
+  // netMu0 still clamps the actual NETWORK input to the training box in that case.
+  const R = { mu0: [0, Rfull.mu0[1]] };
   for (const id of ["mu0"]) {
     const el = $(id), v = +el.value;
     el.min = R[id][0]; el.max = R[id][1];
@@ -1352,6 +1385,37 @@ for (const b of document.querySelectorAll("[data-zeta]"))
   b.addEventListener("click", () => { $("zeta").value = b.dataset.zeta; schedule(); });
 $("extrap").addEventListener("change", e => { setRanges(e.target.checked); schedule(); });
 $("reset").addEventListener("click", () => { $("mu0").value = 1; schedule(); });
+
+// ▶ Play button: sweep μ₀ from its current min (0) to its current max over
+// PLAY_SECONDS, re-rendering every frame; it crosses the blendT0 transition
+// (0 -> initial guess, μ₀,max -> PINN equilibrium). ι is fixed for W7-X.
+const PLAY_SECONDS = 6;
+function makePlay(btnId, sliderId, label) {
+  let raf = null;
+  function stop() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = null;
+    $(btnId).textContent = label;
+    $(btnId).setAttribute("aria-pressed", "false");
+  }
+  $(btnId).addEventListener("click", () => {
+    if (raf) { stop(); return; }
+    const el = $(sliderId), lo = +el.min, hi = +el.max;
+    const t0 = performance.now();
+    $(btnId).textContent = "■ Stop";
+    $(btnId).setAttribute("aria-pressed", "true");
+    const step = now => {
+      const f = Math.min(1, (now - t0) / (1000 * PLAY_SECONDS));
+      el.value = lo + f * (hi - lo);
+      schedule();
+      if (f < 1) raf = requestAnimationFrame(step); else stop();
+    };
+    raf = requestAnimationFrame(step);
+  });
+  $(sliderId).addEventListener("pointerdown", stop);
+  return stop;
+}
+makePlay("play0", "mu0", "▶ Play 0 → μ₀,max");
 window.addEventListener("resize", schedule);
 if (window.ResizeObserver) {
   const ro = new ResizeObserver(schedule);

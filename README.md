@@ -15,10 +15,10 @@ This test case refers to the most advanced Heliotron-stellarator ever built, whi
 ## > $p(\rho;\bar{\mu}),\iota(\rho;\bar{\mu})$ Parametric [[pdf]](https://github.com/96mat/MHD_JAX/blob/42ee3f4b3fabcc3c4d25d07f268ff19cb3931090/img/Heliotron_P_Iota_Param/inference_Poincare_NN_vs_DESC_cross.pdf)
 
 # W7-X Test Case: [link](https://96mat.github.io/MHD_JAX/W7-X/)
-[Wendelstein 7-X](https://www.sciencedirect.com/science/article/pii/S0920379621001575) just like the Matterhorn-S project takes it name form a famous mountain in Germany. This test case can be explored using the link
+[Wendelstein 7-X](https://www.sciencedirect.com/science/article/pii/S0920379621001575), just like the Matterhorn-S project, takes its name from a famous mountain in Germany. This test case can be explored using the link
 
 # CTH Test Case: [link](https://96mat.github.io/MHD_JAX/CTH/)
-The [Compact Toroidal Hybrid](https://www.tandfonline.com/doi/full/10.1080/15361055.2017.1291046) device is a torsatron stellarator concept that combines aspects of classical stellarator and tokamak reactors. This example case can be visualized [here](https://96mat.github.io/MHD_JAX/CTH/)
+The [Compact Toroidal Hybrid](https://www.tandfonline.com/doi/full/10.1080/15361055.2017.1291046) device is a torsatron stellarator concept that combines aspects of classical stellarator and tokamak reactors. This example case can be visualized interactively through the link provided in the section title
 
 # Quasi-Symmetric (HSX-like) Test Case: [link](https://96mat.github.io/MHD_JAX/QS_HSX/)
 The [Quasi-Symmetric](https://pubs.aip.org/aip/pop/article-abstract/4/9/3323/457323/Omnigenity-and-quasihelicity-in-helical-plasma?redirectedFrom=fulltext) stellarator concept exploits the omnigeneity of the magnetic field to combine the inherent steady-state capabilities of stellarators with reduced neoclassical transport, a property naturally exhibited by tokamaks due to their axisymmetry.

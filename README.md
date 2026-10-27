@@ -26,4 +26,4 @@ The [Compact Toroidal Hybrid](https://www.tandfonline.com/doi/full/10.1080/15361
 The [Quasi-Symmetric](https://pubs.aip.org/aip/pop/article-abstract/4/9/3323/457323/Omnigenity-and-quasihelicity-in-helical-plasma?redirectedFrom=fulltext) stellarator concept exploits the [omnigeneity](https://pubs.aip.org/aip/pop/article/4/9/3323/457323/Omnigenity-and-quasihelicity-in-helical-plasma?__cf_chl_tk=YZPAMJjfu9qurtGOegpV9SXMy9kFFTAs5CpDewW6cTQ-1792241083-1.0.1.1-XHVuwtZTfhOp8_ousuRj2h7WVa3CbjWXbYrSaAq44hA) of the magnetic field to combine the inherent steady-state capabilities of stellarators with reduced neoclassical transport, a property naturally exhibited by tokamaks due to their axisymmetry.
 
 # TJ-II Test Case: [link](https://96mat.github.io/MHD_JAX/TJ-II/)
-This Stellarator is a ["bean"](https://www-pub.iaea.org/MTCD/publications/PDF/csp_001c/pdf/ex2_4.pdf) shape heliac, it features an important toroidal resolution and enables the study of several rotational-transform configurations.
+This Stellarator is a ["bean"](https://www-pub.iaea.org/MTCD/publications/PDF/csp_001c/pdf/ex2_4.pdf) shape heliac.

@@ -1,5 +1,5 @@
 # GUI: Ultra-fast 3D-MHD Equilibrium solver
-This ```repo``` is the result of my master internship-thesis at INRIA (Strasbourg, FR) where I implemented from scratch [this](https://iopscience.iop.org/article/10.1088/1741-4326/ae2937) paper 
+This ```repo``` is the result of my master internship-thesis at INRIA (Strasbourg, FR) where on top of [Scimba](https://www.scimba.org/) framework I implemented from scratch [this](https://iopscience.iop.org/article/10.1088/1741-4326/ae2937) paper 
 and I made the extension to full **continous parametric** for different kinds of fusion reactors, both in pressure amplitude $p(\rho)$ and rotational transoform $\iota(\rho)$. All the simulations have been 
 compared and validated against [DESC](https://desc-docs.readthedocs.io/en/stable/theory_general.html) the reference solver together with [VMEC++](https://github.com/proximafusion/vmecpp) for MHD equilibrium solutions.
 
